@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 from io import BytesIO
+from datetime import date
 
 st.set_page_config(page_title="WiFi Inventory（Category=WIFI）", layout="wide")
 
@@ -131,6 +132,27 @@ MAINT_USE_PLUS = [
 # -------------------------
 # 工具函數
 # -------------------------
+
+from openpyxl.styles import Border
+
+def write_df_to_excel_with_autofit(writer, df, sheet_name, transpose=False):
+    """
+    Excel 寫入：
+    - 僅下載時 transpose
+    - 不調整欄寬
+    - 移除第一列、第一欄（以及所有儲存格）的邊框
+    """
+    out_df = df.T if transpose else df
+    out_df.to_excel(writer, sheet_name=sheet_name, index=True)
+
+    worksheet = writer.sheets[sheet_name]
+
+    # 移除所有 cell 的邊框
+    no_border = Border()
+    for row in worksheet.iter_rows():
+        for cell in row:
+            cell.border = no_border
+
 def load_file(uploaded_file):
     suffix = uploaded_file.name.lower().split('.')[-1]
     if suffix == 'csv':
@@ -319,28 +341,78 @@ if uploaded:
     st.markdown("### 📈 全部總計")
     section_metrics("Overall", combined_df)
 
-    # 5) 下載區（含新欄位）
+    today_str = date.today().isoformat()  # e.g. 2026-03-27
+
+   # 5) 下載區（Excel｜僅下載時 transpose）
     col_a, col_b, col_c = st.columns(3)
+
+    # -------- For Biz Use --------
     with col_a:
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            write_df_to_excel_with_autofit(
+                writer,
+                biz_df,
+                sheet_name="For Biz Use",
+                transpose=True
+            )
         st.download_button(
-            "⬇️ 下載 For Biz Use（CSV）",
-            biz_df.to_csv(index=False).encode("utf-8-sig"),
-            "wifi_report_biz_use.csv",
-            "text/csv"
+            "⬇️ 下載 For Biz Use（Excel）",
+            output.getvalue(),
+            f"wifi_report_biz_use_{today_str}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+    # -------- For Maintenance --------
     with col_b:
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            write_df_to_excel_with_autofit(
+                writer,
+                maint_df,
+                sheet_name="For Maintenance",
+                transpose=True
+            )
         st.download_button(
-            "⬇️ 下載 For Maintenance（CSV）",
-            maint_df.to_csv(index=False).encode("utf-8-sig"),
-            "wifi_report_maintenance.csv",
-            "text/csv"
+            "⬇️ 下載 For Maintenance（Excel）",
+            output.getvalue(),
+            f"wifi_report_maintenance_{today_str}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+    # -------- 合併檢視（3 Sheets）--------
     with col_c:
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            # Sheet 1：Biz（轉置）
+            write_df_to_excel_with_autofit(
+                writer,
+                biz_df,
+                sheet_name="For Biz Use",
+                transpose=True
+            )
+
+            # Sheet 2：Maintenance（轉置）
+            write_df_to_excel_with_autofit(
+                writer,
+                maint_df,
+                sheet_name="For Maintenance",
+                transpose=True
+            )
+
+            # Sheet 3：Combined（原始直式，不轉置）
+            write_df_to_excel_with_autofit(
+                writer,
+                combined_df,
+                sheet_name="Combined (Original)",
+                transpose=False
+            )
+
         st.download_button(
-            "⬇️ 下載合併版（CSV）",
-            combined_df.to_csv(index=False).encode("utf-8-sig"),
-            "wifi_report_combined.csv",
-            "text/csv"
+            "⬇️ 下載合併版（Excel，3 Sheets）",
+            output.getvalue(),
+            f"wifi_report_combined_{today_str}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
 else:
